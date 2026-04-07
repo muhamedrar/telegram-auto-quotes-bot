@@ -1,0 +1,8 @@
+{
+  "auto_mode": true,
+  "interval_days": 1,
+  "send_time": "08:00",
+  "schedule_source": "api",
+  "scheduled_custom_message": null,
+  "last_sent_on": null
+}
