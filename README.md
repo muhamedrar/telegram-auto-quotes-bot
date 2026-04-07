@@ -1,83 +1,186 @@
 # Telegram Personalized Messaging Bot
 
-This project creates a Telegram bot that can:
+A Telegram bot for sending personalized messages with images, either manually or on a schedule.
 
-- send a personalized message from an API,
-- send your own custom message,
-- attach an image to every message,
-- schedule automatic sends every few days.
+## Preview
 
-## 1. What works right now
+<p align="center">
+  <img src="docs/images/start.png" alt="Start screen" width="48%" />
+  <img src="docs/images/status.png" alt="Status screen" width="48%" />
+</p>
 
-- Messages come from an API by default, with a built-in fallback library if the API fails.
-- Every send can also include an image from a free image API URL template.
-- Scheduled sending works with a saved runtime state file.
-- You control the bot using Telegram commands from your admin chat.
+<p align="center">
+  <img src="docs/images/result.jpg" alt="Example message 1" width="31%" />
+  <img src="docs/images/result2.jpg" alt="Example message 2" width="31%" />
+</p>
 
-## 2. Setup
+## Features
 
-Create a virtual environment and install dependencies:
+- Send a message from an API with `/send_quote`
+- Send your own custom message with `/send_custom`
+- Attach an image to every message
+- Schedule automatic sends
+- Choose how many times to send on each schedule day
+- Use fixed times or random daily times
+- Switch scheduled messages between API mode and custom mode
+- Fall back to built-in messages if the API fails
+- Run easily with Docker Compose
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
+## How The Bot Works
+
+There are 2 important Telegram chats in this project:
+
+- `ADMIN_CHAT_ID`: your own Telegram chat ID. This chat controls the bot.
+- `TELEGRAM_CHAT_ID`: the target chat ID. This is where the bot sends messages.
+
+In most cases:
+
+- you send commands from the admin chat
+- your target receives the messages in the target chat
+
+Important:
+
+- If the target is a private Telegram user, that user must open your bot and press `Start` at least once before your bot can send messages to them.
+- Getting the target ID is not enough by itself. Telegram still requires the target user to start the bot first.
+
+## How To Get Telegram Chat IDs
+
+One easy way is with `@tg_raw_data_bot`.
+
+### Get your admin chat ID
+
+1. Open Telegram and search for `@tg_raw_data_bot`
+2. Press `Start`
+3. Send any message
+4. Copy the value inside `chat.id`
+5. Put that value in `ADMIN_CHAT_ID`
+
+### Get the target private user ID
+
+1. Ask the target user to open `@tg_raw_data_bot`
+2. They press `Start`
+3. They send any message
+4. They copy their `chat.id`
+5. Put that value in `TELEGRAM_CHAT_ID`
+6. Then the target user must also open your bot and press `Start`
+
+### Get a group chat ID
+
+1. Add `@tg_raw_data_bot` to the group
+2. Send any message in the group
+3. Copy the group's `chat.id`
+4. Group IDs are usually negative, often starting with `-100...`
+5. Put that value in `TELEGRAM_CHAT_ID`
+
+## Configuration
 
 Copy `.env.example` to `.env` and fill in your values.
 
-Important values:
+Important variables:
 
 - `TELEGRAM_BOT_TOKEN`: your bot token from BotFather
-- `TELEGRAM_CHAT_ID`: the Telegram chat ID that should receive messages
-- `ADMIN_CHAT_ID`: your own Telegram chat ID, used to control the bot
-- `SEND_TIME`: scheduled send time like `20:00`
+- `ADMIN_CHAT_ID`: your own Telegram chat ID for controlling the bot
+- `TELEGRAM_CHAT_ID`: the target chat ID that receives the messages
+- `AUTO_MODE`: start with scheduling on or off
 - `INTERVAL_DAYS`: send every N days
 - `SENDS_PER_DAY`: how many times to send on each schedule day
-- `RANDOM_TIME_MODE`: `true` or `false` for random daily send times
-- `QUOTE_API_URL`: API endpoint for message text. Default is `https://www.affirmations.dev/`
+- `RANDOM_TIME_MODE`: `true` for random daily times, `false` for fixed times
+- `SEND_TIME`: base fixed time like `20:00`
+- `APP_TIMEZONE`: app timezone, for example `Africa/Cairo`
+- `QUOTE_API_URL`: API source for message text
 - `MESSAGE_TONE_TAGS`: comma-separated tone tags like `romantic,gentle,encouraging`
-- `IMAGE_API_URL_TEMPLATE`: image URL template. Default uses LoremFlickr.
-- `IMAGE_TAGS`: one or more image tag groups separated by `|`, for example `flowers,roses,petals/all|sunset,sky,clouds/all`
+- `IMAGE_API_URL_TEMPLATE`: image URL template
+- `IMAGE_TAGS`: image tag groups separated by `|`
+- `IMAGE_WIDTH` and `IMAGE_HEIGHT`: image size
 
-Then start the bot:
+You can control the vibe of the generated content from `.env`:
 
-```bash
-python3 main.py
-```
+- message vibe: change `MESSAGE_TONE_TAGS`
+- image vibe: change `IMAGE_TAGS`
 
-If you want to run it with Docker in the background instead:
+## Start With Docker
+
+This project is ready to run with Docker Compose.
+
+### 1. Build and start in the background
 
 ```bash
 docker compose up -d --build
 ```
 
-## 3. Deploy So It Stays Running
-
-The simplest deployment for this bot is a small Linux server or VPS with `systemd`.
-
-1. Copy the project to the server.
-2. Create a virtual environment and install dependencies.
-3. Put your real values in `.env`.
-4. Copy [deploy/telegram-love-bot.service](/mnt/shared/Projects/Nahla/telegram_voice_project/deploy/telegram-love-bot.service) to `/etc/systemd/system/telegram-love-bot.service`.
-5. Edit that service file so `User`, `WorkingDirectory`, and `ExecStart` match your server paths.
-6. Enable and start the bot service:
+### 2. Check logs
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now telegram-love-bot
-sudo systemctl status telegram-love-bot
+docker compose logs -f
 ```
 
-Useful commands later:
+### 3. Stop the bot
 
 ```bash
-sudo systemctl restart telegram-love-bot
-sudo journalctl -u telegram-love-bot -f
+docker compose down
 ```
 
-## 4. Bot commands
+### 4. Restart after config changes
 
+If you change `.env`, restart the container:
+
+```bash
+docker compose up -d --build
+```
+
+## Manual Sending
+
+You can send messages immediately from the admin chat.
+
+- `/send_quote`: send a message from the API now
+- `/send_custom Your message here`: send your own custom text now
+
+## Automatic Sending
+
+The scheduler can send automatically to the target chat.
+
+Main scheduling commands:
+
+- `/schedule_on`: enable automatic sending
+- `/schedule_off`: disable automatic sending
+- `/set_time 20:00`: set the fixed base time
+- `/set_interval 2`: send every 2 days
+- `/set_daily_count 3`: send 3 times on each schedule day
+- `/set_random_time on`: use random times during the day
+- `/set_random_time off`: use fixed schedule times
+- `/set_source api`: scheduled messages come from the API
+- `/set_source custom`: scheduled messages use your saved custom text
+- `/set_custom_schedule Your scheduled message here`: save the custom scheduled text
+- `/status`: show current schedule settings
+
+Random mode currently picks random times between `09:00` and `21:00` for that day.
+
+## Fallback Messages
+
+If the message API fails, the bot falls back to built-in local messages so sending can continue.
+
+You can change those fallback messages in:
+
+- [`bot_app/quotes.py`](bot_app/quotes.py)
+
+Look for the `LOVELY_MESSAGES` list and edit it to match the style you want.
+
+## Supported API Response Fields
+
+The bot can read message text from APIs that return JSON fields such as:
+
+- `affirmation`
+- `reason`
+- `message`
+- `text`
+- `quote`
+- `body`
+
+If the API also returns `author`, the bot includes it in the message caption/text.
+
+## Main Commands Summary
+
+- `/chat_id`
 - `/send_quote`
 - `/send_custom Your custom message here`
 - `/schedule_on`
@@ -88,24 +191,12 @@ sudo journalctl -u telegram-love-bot -f
 - `/set_random_time on`
 - `/set_source api`
 - `/set_source custom`
-- `/set_custom_schedule You make every day brighter.`
+- `/set_custom_schedule Your scheduled message here`
 - `/status`
 
-## 5. Telegram notes
+## Notes
 
-The target user or chat usually has to start the bot at least once before the bot can message that account.
-
-If you want the bot to send into a private chat, make sure the `TELEGRAM_CHAT_ID` belongs to that chat.
-
-## 6. API format
-
-The bot can read message text from APIs that return JSON fields like:
-
-- `affirmation`
-- `reason`
-- `message`
-- `text`
-- `quote`
-- `body`
-
-If the API also returns `author`, the bot includes it in the message caption/text.
+- The bot only accepts control commands from `ADMIN_CHAT_ID`
+- The target user must start the bot first if you are sending to a private account
+- `data/runtime_state.json` stores scheduler state locally
+- `.env` is intentionally ignored by Git
