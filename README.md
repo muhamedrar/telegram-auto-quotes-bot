@@ -76,6 +76,15 @@ One easy way is with `@tg_raw_data_bot`.
 
 Copy `.env.example` to `.env` and fill in your values.
 
+### Create The Bot And Get The Token
+
+1. Open Telegram and search for `@BotFather`.
+2. Send `/newbot`.
+3. Choose a display name for the bot.
+4. Choose a username that ends with `bot`.
+5. BotFather will give you a token.
+6. Put that token into `TELEGRAM_BOT_TOKEN` in `.env`.
+
 Important variables:
 
 - `TELEGRAM_BOT_TOKEN`: your bot token from BotFather
