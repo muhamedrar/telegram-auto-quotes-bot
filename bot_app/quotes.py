@@ -118,6 +118,7 @@ class QuoteService:
         self.api_url = api_url
         self.tone_tags = self._parse_tone_tags(tone_tags)
         self.timeout_seconds = timeout_seconds
+        self.last_tone_snippet: str | None = None
 
     def random_quote(self) -> Quote:
         if self.api_url:
@@ -179,8 +180,16 @@ class QuoteService:
         if not snippet_pool:
             return quote
 
-        chosen_snippet = random.choice(snippet_pool)
-        if chosen_snippet.lower() in quote.text.lower():
+        available_snippets = [
+            snippet for snippet in snippet_pool if snippet.lower() not in quote.text.lower()
+        ]
+        if not available_snippets:
             return quote
+
+        non_repeating_snippets = [
+            snippet for snippet in available_snippets if snippet != self.last_tone_snippet
+        ]
+        chosen_snippet = random.choice(non_repeating_snippets or available_snippets)
+        self.last_tone_snippet = chosen_snippet
 
         return Quote(text=f"{quote.text}\n\n{chosen_snippet}", author=quote.author)
