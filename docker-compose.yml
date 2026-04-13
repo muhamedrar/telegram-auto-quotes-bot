@@ -1,7 +1,7 @@
 services:
   bot:
     build: .
-    container_name: telegram-love-bot
+    container_name: telegram-quotes-bot
     restart: unless-stopped
     env_file:
       - .env

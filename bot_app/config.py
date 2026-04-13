@@ -29,7 +29,11 @@ class Settings:
     random_time_mode: bool
     send_time: str
     timezone_name: str
+    quote_provider: str
     quote_api_url: str
+    cohere_api_key: str
+    cohere_model: str
+    cohere_api_url: str
     message_tone_tags: str
     image_api_url_template: str
     image_tags: str
@@ -67,7 +71,11 @@ def load_settings() -> Settings:
         random_time_mode=os.getenv("RANDOM_TIME_MODE", "false").lower() == "true",
         send_time=send_time,
         timezone_name=os.getenv("APP_TIMEZONE", "Africa/Cairo"),
+        quote_provider=os.getenv("QUOTE_PROVIDER", "cohere").strip().lower(),
         quote_api_url=os.getenv("QUOTE_API_URL", "https://www.affirmations.dev/"),
+        cohere_api_key=(os.getenv("COHERE_API_KEY") or "").strip(),
+        cohere_model=os.getenv("COHERE_MODEL", "command-r-08-2024").strip(),
+        cohere_api_url=os.getenv("COHERE_API_URL", "https://api.cohere.com/v2/chat").strip(),
         message_tone_tags=os.getenv("MESSAGE_TONE_TAGS", "romantic,gentle,encouraging"),
         image_api_url_template=os.getenv(
             "IMAGE_API_URL_TEMPLATE",

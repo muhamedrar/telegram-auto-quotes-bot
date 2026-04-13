@@ -40,7 +40,14 @@ def run() -> None:
     services = Services(
         settings=settings,
         state_store=StateStore(settings),
-        quote_service=QuoteService(settings.quote_api_url, settings.message_tone_tags),
+        quote_service=QuoteService(
+            provider=settings.quote_provider,
+            api_url=settings.quote_api_url,
+            tone_tags=settings.message_tone_tags,
+            cohere_api_key=settings.cohere_api_key,
+            cohere_model=settings.cohere_model,
+            cohere_api_url=settings.cohere_api_url,
+        ),
         image_service=ImageService(
             url_template=settings.image_api_url_template,
             tags=settings.image_tags,
@@ -443,7 +450,9 @@ def _format_status(state: RuntimeState, services: Services) -> str:
         f"Scheduled source: {state.schedule_source}\n"
         f"Custom scheduled message: {state.scheduled_custom_message or 'Not set'}\n"
         f"Last sent on: {state.last_sent_on or 'Never'}\n"
-        f"Message API: {services.settings.quote_api_url}\n"
+        f"Quote provider: {services.settings.quote_provider}\n"
+        f"Cohere model: {services.settings.cohere_model}\n"
+        f"Legacy quote API: {services.settings.quote_api_url}\n"
         f"Image API template: {services.settings.image_api_url_template}\n"
         f"Image tags: {services.settings.image_tags}"
     )

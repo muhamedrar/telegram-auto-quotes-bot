@@ -16,14 +16,14 @@ A Telegram bot for sending personalized messages with images, either manually or
 
 ## Features
 
-- Send a message from an API with `/send_quote`
+- Generate a message with Cohere using `/send_quote`
 - Send your own custom message with `/send_custom`
 - Attach an image to every message
 - Schedule automatic sends
 - Choose how many times to send on each schedule day
 - Use fixed times or random daily times
 - Switch scheduled messages between API mode and custom mode
-- Fall back to built-in messages if the API fails
+- Fall back to the legacy API or built-in messages if Cohere is unavailable
 - Run easily with Docker Compose
 
 ## How The Bot Works
@@ -96,7 +96,11 @@ Important variables:
 - `RANDOM_TIME_MODE`: `true` for random daily times, `false` for fixed times
 - `SEND_TIME`: base fixed time like `20:00`
 - `APP_TIMEZONE`: app timezone, for example `Africa/Cairo`
-- `QUOTE_API_URL`: API source for message text
+- `QUOTE_PROVIDER`: quote source mode, usually `cohere`
+- `COHERE_API_KEY`: your Cohere API key
+- `COHERE_MODEL`: Cohere model name, default `command-r-08-2024`
+- `COHERE_API_URL`: Cohere chat endpoint
+- `QUOTE_API_URL`: optional legacy quote API fallback
 - `MESSAGE_TONE_TAGS`: comma-separated tone tags like `romantic,gentle,encouraging`
 - `IMAGE_API_URL_TEMPLATE`: image URL template
 - `IMAGE_TAGS`: image tag groups separated by `|`
@@ -141,7 +145,7 @@ docker compose up -d --build
 
 You can send messages immediately from the admin chat.
 
-- `/send_quote`: send a message from the API now
+- `/send_quote`: generate a message through Cohere now
 - `/send_custom Your message here`: send your own custom text now
 
 ## Automatic Sending
@@ -166,7 +170,7 @@ Random mode currently picks random times between `09:00` and `21:00` for that da
 
 ## Fallback Messages
 
-If the message API fails, the bot falls back to built-in local messages so sending can continue.
+If Cohere fails, the bot tries the legacy quote API, and after that it falls back to built-in local messages so sending can continue.
 
 You can change those fallback messages in:
 
@@ -174,9 +178,9 @@ You can change those fallback messages in:
 
 Look for the `LOVELY_MESSAGES` list and edit it to match the style you want.
 
-## Supported API Response Fields
+## Legacy API Support
 
-The bot can read message text from APIs that return JSON fields such as:
+When `QUOTE_PROVIDER=api` or Cohere is unavailable, the bot can still read message text from legacy APIs that return JSON fields such as:
 
 - `affirmation`
 - `reason`
