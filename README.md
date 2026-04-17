@@ -1,6 +1,6 @@
 # Telegram Personalized Messaging Bot
 
-A Telegram bot for sending personalized messages with images, either manually or on a schedule.
+A Telegram bot for sending stoic quotes with dark monochrome images, either manually or on a schedule.
 
 ## Preview
 
@@ -32,6 +32,8 @@ There are 2 important Telegram chats in this project:
 
 - `ADMIN_CHAT_ID`: your own Telegram chat ID. This chat controls the bot.
 - `TELEGRAM_CHAT_ID`: the target chat ID. This is where the bot sends messages.
+
+If you want to send the same message to more than one target chat, use `TELEGRAM_CHAT_IDS` with a comma-separated list of chat IDs.
 
 In most cases:
 
@@ -89,7 +91,8 @@ Important variables:
 
 - `TELEGRAM_BOT_TOKEN`: your bot token from BotFather
 - `ADMIN_CHAT_ID`: your own Telegram chat ID for controlling the bot
-- `TELEGRAM_CHAT_ID`: the target chat ID that receives the messages
+- `TELEGRAM_CHAT_ID`: one target chat ID that receives the messages
+- `TELEGRAM_CHAT_IDS`: optional comma-separated target chat IDs for broadcasting the same message to multiple chats
 - `AUTO_MODE`: start with scheduling on or off
 - `INTERVAL_DAYS`: send every N days
 - `SENDS_PER_DAY`: how many times to send on each schedule day
@@ -97,17 +100,19 @@ Important variables:
 - `SEND_TIME`: base fixed time like `20:00`
 - `APP_TIMEZONE`: app timezone, for example `Africa/Cairo`
 - `QUOTE_PROVIDER`: quote source mode, usually `cohere`
+- `QUOTE_THEME`: the core quote theme, defaulting to stoicism and discipline
 - `COHERE_API_KEY`: your Cohere API key
 - `COHERE_MODEL`: Cohere model name, default `command-r-08-2024`
 - `COHERE_API_URL`: Cohere chat endpoint
 - `QUOTE_API_URL`: optional legacy quote API fallback
-- `MESSAGE_TONE_TAGS`: comma-separated tone tags like `romantic,gentle,encouraging`
+- `MESSAGE_TONE_TAGS`: comma-separated tone tags like `stoic,disciplined,calm,intense`
 - `IMAGE_API_URL_TEMPLATE`: image URL template
 - `IMAGE_TAGS`: image tag groups separated by `|`
 - `IMAGE_WIDTH` and `IMAGE_HEIGHT`: image size
 
 You can control the vibe of the generated content from `.env`:
 
+- quote theme: change `QUOTE_THEME`
 - message vibe: change `MESSAGE_TONE_TAGS`
 - image vibe: change `IMAGE_TAGS`
 
@@ -145,12 +150,12 @@ docker compose up -d --build
 
 You can send messages immediately from the admin chat.
 
-- `/send_quote`: generate a message through Cohere now
-- `/send_custom Your message here`: send your own custom text now
+- `/send_quote`: generate one stoic message and send it to all configured target chats
+- `/send_custom Your message here`: send your own custom text to all configured target chats
 
 ## Automatic Sending
 
-The scheduler can send automatically to the target chat.
+The scheduler can send automatically to all configured target chats.
 
 Main scheduling commands:
 
@@ -176,7 +181,7 @@ You can change those fallback messages in:
 
 - [`bot_app/quotes.py`](bot_app/quotes.py)
 
-Look for the `LOVELY_MESSAGES` list and edit it to match the style you want.
+Look for the `FALLBACK_QUOTES` list and edit it to match the style you want.
 
 ## Legacy API Support
 

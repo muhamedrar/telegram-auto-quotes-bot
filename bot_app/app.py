@@ -44,6 +44,7 @@ def run() -> None:
             provider=settings.quote_provider,
             api_url=settings.quote_api_url,
             tone_tags=settings.message_tone_tags,
+            quote_theme=settings.quote_theme,
             cohere_api_key=settings.cohere_api_key,
             cohere_model=settings.cohere_model,
             cohere_api_url=settings.cohere_api_url,
@@ -165,7 +166,9 @@ async def send_quote_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         LOGGER.exception("Manual quote send failed")
         await update.effective_message.reply_text(f"Could not send the quote: {_friendly_send_error(exc)}")
         return
-    await update.effective_message.reply_text("Lovely message with image sent.")
+    await update.effective_message.reply_text(
+        f"Stoic quote with image sent to {len(services.settings.partner_chat_ids)} chat(s)."
+    )
 
 
 async def send_custom_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -190,7 +193,9 @@ async def send_custom_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"Could not send the custom message: {_friendly_send_error(exc)}"
         )
         return
-    await update.effective_message.reply_text("Custom message with image sent.")
+    await update.effective_message.reply_text(
+        f"Custom message with image sent to {len(services.settings.partner_chat_ids)} chat(s)."
+    )
 
 
 async def schedule_on_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -356,20 +361,12 @@ async def _send_message_to_partner(
         custom_message=custom_message,
     )
     image_url = services.image_service.random_image_url()
-
-    await context.bot.send_chat_action(
-        chat_id=services.settings.partner_chat_id,
-        action=ChatAction.UPLOAD_PHOTO,
+    await _send_message_to_targets(
+        bot=context.bot,
+        target_chat_ids=services.settings.partner_chat_ids,
+        caption_text=caption_text,
+        image_url=image_url,
     )
-    try:
-        await context.bot.send_photo(
-            chat_id=services.settings.partner_chat_id,
-            photo=image_url,
-            caption=caption_text,
-        )
-    except Exception as exc:
-        LOGGER.warning("Image send failed, falling back to text only: %s", exc)
-        await context.bot.send_message(chat_id=services.settings.partner_chat_id, text=caption_text)
 
 
 def _build_delivery_texts(
@@ -417,7 +414,7 @@ def _help_text() -> str:
     return (
         "Commands:\n"
         "/chat_id - show the current chat ID\n"
-        "/send_quote - send a lovely encouraging message now\n"
+        "/send_quote - send a stoic quote now\n"
         "/send_custom <message> - send your own message now\n"
         "/schedule_on - enable automatic sends\n"
         "/schedule_off - disable automatic sends\n"
@@ -446,11 +443,12 @@ def _format_status(state: RuntimeState, services: Services) -> str:
         f"Random time mode: {'ON' if state.random_time_mode else 'OFF'}\n"
         f"Today's planned times: {todays_times}\n"
         f"Admin chat ID: {services.settings.admin_chat_id}\n"
-        f"Target chat ID: {services.settings.partner_chat_id}\n"
+        f"Target chat IDs: {', '.join(str(chat_id) for chat_id in services.settings.partner_chat_ids)}\n"
         f"Scheduled source: {state.schedule_source}\n"
         f"Custom scheduled message: {state.scheduled_custom_message or 'Not set'}\n"
         f"Last sent on: {state.last_sent_on or 'Never'}\n"
         f"Quote provider: {services.settings.quote_provider}\n"
+        f"Quote theme: {services.settings.quote_theme}\n"
         f"Cohere model: {services.settings.cohere_model}\n"
         f"Legacy quote API: {services.settings.quote_api_url}\n"
         f"Image API template: {services.settings.image_api_url_template}\n"
@@ -463,9 +461,9 @@ def _friendly_send_error(exc: Exception) -> str:
         message = str(exc)
         if "Chat not found" in message:
             return (
-                "Chat not found. Make sure TELEGRAM_CHAT_ID is the real numeric chat ID, "
-                "the target user has started the bot at least once, or the bot has been added "
-                "to the target group/channel."
+                "Chat not found. Make sure TELEGRAM_CHAT_ID or TELEGRAM_CHAT_IDS contains real numeric "
+                "chat IDs, the target user has started the bot at least once, or the bot has been "
+                "added to the target group/channel."
             )
         return message
     if isinstance(exc, Forbidden):
@@ -561,20 +559,38 @@ async def _send_message_to_partner_from_application(
         custom_message=custom_message,
     )
     image_url = services.image_service.random_image_url()
-
-    await application.bot.send_chat_action(
-        chat_id=services.settings.partner_chat_id,
-        action=ChatAction.UPLOAD_PHOTO,
+    await _send_message_to_targets(
+        bot=application.bot,
+        target_chat_ids=services.settings.partner_chat_ids,
+        caption_text=caption_text,
+        image_url=image_url,
     )
-    try:
-        await application.bot.send_photo(
-            chat_id=services.settings.partner_chat_id,
-            photo=image_url,
-            caption=caption_text,
-        )
-    except Exception as exc:
-        LOGGER.warning("Image send failed, falling back to text only: %s", exc)
-        await application.bot.send_message(chat_id=services.settings.partner_chat_id, text=caption_text)
+
+
+async def _send_message_to_targets(
+    bot,
+    target_chat_ids: tuple[int, ...],
+    caption_text: str,
+    image_url: str,
+) -> None:
+    send_errors: list[str] = []
+    delivered_count = 0
+
+    for chat_id in target_chat_ids:
+        try:
+            await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
+            try:
+                await bot.send_photo(chat_id=chat_id, photo=image_url, caption=caption_text)
+            except Exception as exc:
+                LOGGER.warning("Image send failed for chat %s, falling back to text only: %s", chat_id, exc)
+                await bot.send_message(chat_id=chat_id, text=caption_text)
+            delivered_count += 1
+        except Exception as exc:
+            LOGGER.warning("Delivery failed for chat %s: %s", chat_id, exc)
+            send_errors.append(f"{chat_id}: {_friendly_send_error(exc)}")
+
+    if delivered_count == 0:
+        raise RuntimeError("Could not deliver to any target chat. " + "; ".join(send_errors))
 
 
 def build_telegram_request(settings: Settings) -> HTTPXRequest:

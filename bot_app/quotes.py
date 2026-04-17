@@ -35,27 +35,27 @@ class Quote:
         return text
 
 
-LOVELY_MESSAGES = [
-    Quote("You are so deeply loved, and I hope today feels a little softer because of that."),
-    Quote("No matter how heavy the day feels, I believe in your heart and your strength."),
-    Quote("You make life warmer, calmer, and more beautiful just by being in it."),
-    Quote("I hope you remember today that you are precious, strong, and never alone."),
-    Quote("Even on your hardest days, you are still someone wonderful and deeply worthy of love."),
-    Quote("You deserve gentleness, rest, and a thousand reminders of how special you are."),
-    Quote("I am so proud of the way you keep going, even when things feel difficult."),
-    Quote("Your smile has a way of making everything around you feel lighter and sweeter."),
-    Quote("I hope this message wraps around your heart like a small warm hug."),
-    Quote("You are one of the best things in this world, and I hope you never forget that."),
-    Quote("You bring comfort, kindness, and light in a way that only you can."),
-    Quote("If today feels tiring, please remember how loved and appreciated you are."),
-    Quote("You are doing better than you think, and I am always cheering for you."),
-    Quote("Your heart is beautiful, and the world is better because you are in it."),
-    Quote("You deserve happy moments, peaceful thoughts, and love that feels safe."),
-    Quote("Just a reminder that you matter so much, and you make my world brighter."),
-    Quote("I hope today gives you a reason to smile, even if it starts with this little message."),
-    Quote("You have such a gentle strength, and I admire that about you so much."),
-    Quote("Whatever today looks like, I hope you feel loved, supported, and seen."),
-    Quote("You are my favorite kind of peace, and I hope your heart feels calm today."),
+FALLBACK_QUOTES = [
+    Quote("Discipline is the quiet strength that keeps the soul from drifting."),
+    Quote("Master your mind, and the world loses much of its power over you."),
+    Quote("A calm heart turns hardship into practice."),
+    Quote("What you endure with order becomes part of your strength."),
+    Quote("Control your response, and fate loses its sharpest weapon."),
+    Quote("The strongest person is often the one who stays composed."),
+    Quote("Let your principles speak louder than your moods."),
+    Quote("Endure the moment well, and the next one becomes lighter."),
+    Quote("Peace begins when you stop arguing with what you cannot control."),
+    Quote("Train your thoughts, and your days will obey your character."),
+    Quote("A steady mind can walk through chaos without borrowing its noise."),
+    Quote("Restraint is not weakness; it is power under command."),
+    Quote("The obstacle is often the place where character gets forged."),
+    Quote("Carry yourself with order, even when the world does not."),
+    Quote("The soul grows stronger each time it chooses reason over panic."),
+    Quote("Stand firm, speak less, and let your actions reveal your discipline."),
+    Quote("Hardship is lighter when the mind refuses to kneel before it."),
+    Quote("Patience is strength that has learned how to breathe."),
+    Quote("The wise person does not chase peace; they practice it."),
+    Quote("Self-control turns pressure into dignity."),
 ]
 
 
@@ -72,6 +72,12 @@ class QuoteService:
         "proud",
         "calm",
         "sweet",
+        "stoic",
+        "disciplined",
+        "resilient",
+        "philosophical",
+        "minimal",
+        "intense",
     }
     TONE_ALIASES = {
         "lovely": "sweet",
@@ -80,6 +86,9 @@ class QuoteService:
         "comforting": "reassuring",
         "cute": "playful",
         "caring": "supportive",
+        "stoicism": "stoic",
+        "discipline": "disciplined",
+        "badass": "intense",
     }
 
     def __init__(
@@ -87,6 +96,7 @@ class QuoteService:
         provider: str,
         api_url: str,
         tone_tags: str = "",
+        quote_theme: str = "stoicism, discipline, resilience, self-control, inner peace",
         cohere_api_key: str = "",
         cohere_model: str = "command-r-08-2024",
         cohere_api_url: str = "https://api.cohere.com/v2/chat",
@@ -95,6 +105,7 @@ class QuoteService:
         self.provider = provider.strip().lower() or "cohere"
         self.api_url = api_url.strip()
         self.tone_tags = self._parse_tone_tags(tone_tags)
+        self.quote_theme = quote_theme.strip() or "stoicism, discipline, resilience, self-control, inner peace"
         self.cohere_api_key = cohere_api_key.strip()
         self.cohere_model = cohere_model.strip() or "command-r-08-2024"
         self.cohere_api_url = cohere_api_url.strip() or "https://api.cohere.com/v2/chat"
@@ -120,7 +131,7 @@ class QuoteService:
             if quote is not None:
                 return quote
 
-        LOGGER.info("Selecting a built-in fallback message")
+        LOGGER.info("Selecting a built-in fallback quote")
         return self._random_fallback_quote()
 
     def _try_cohere_quote(self) -> Quote | None:
@@ -156,7 +167,7 @@ class QuoteService:
             json={
                 "model": self.cohere_model,
                 "message": prompt,
-                "temperature": 0.9,
+                "temperature": 0.85,
                 "max_tokens": 120,
                 "response_format": {"type": "json_object"},
             },
@@ -172,7 +183,7 @@ class QuoteService:
         return Quote(text=cleaned_text)
 
     def _build_cohere_prompt(self) -> str:
-        tone_hint = ", ".join(self.tone_tags) if self.tone_tags else "warm, encouraging"
+        tone_hint = ", ".join(self.tone_tags) if self.tone_tags else "stoic, calm, disciplined"
         avoid_text = (
             f" Avoid reusing or closely paraphrasing this quote: {self.last_generated_text}."
             if self.last_generated_text
@@ -180,11 +191,12 @@ class QuoteService:
         )
         return (
             "Generate a JSON object with one field named text. "
-            "The text must be one original personalized quote for someone you care about. "
-            f"Use these tone tags: {tone_hint}."
-            " Keep it to a single sentence, around 8 to 18 words. "
+            "The text must be one original stoic quote or aphorism. "
+            f"Core themes: {self.quote_theme}. "
+            f"Style tags: {tone_hint}. "
+            "Keep it to a single sentence, around 8 to 18 words. "
+            "It should feel disciplined, calm, sharp, reflective, and memorable. "
             "Do not include quotation marks, emojis, hashtags, markdown, or an author name."
-            "Do not repeat the quotes"
             f"{avoid_text}"
         )
 
@@ -277,7 +289,7 @@ class QuoteService:
         return parsed
 
     def _random_fallback_quote(self) -> Quote:
-        choices = [quote for quote in LOVELY_MESSAGES if quote.text != self.last_generated_text]
-        chosen_quote = random.choice(choices or LOVELY_MESSAGES)
+        choices = [quote for quote in FALLBACK_QUOTES if quote.text != self.last_generated_text]
+        chosen_quote = random.choice(choices or FALLBACK_QUOTES)
         self.last_generated_text = chosen_quote.text
         return chosen_quote

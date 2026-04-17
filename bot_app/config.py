@@ -17,7 +17,7 @@ STATE_FILE = DATA_DIR / "runtime_state.json"
 @dataclass(frozen=True)
 class Settings:
     telegram_bot_token: str
-    partner_chat_id: int
+    partner_chat_ids: tuple[int, ...]
     admin_chat_id: int
     telegram_http_version: str
     telegram_force_ipv4: bool
@@ -30,6 +30,7 @@ class Settings:
     send_time: str
     timezone_name: str
     quote_provider: str
+    quote_theme: str
     quote_api_url: str
     cohere_api_key: str
     cohere_model: str
@@ -50,16 +51,16 @@ def load_settings() -> Settings:
     load_dotenv()
 
     token = _require("TELEGRAM_BOT_TOKEN")
-    partner_chat_id = int(_require("TELEGRAM_CHAT_ID"))
+    partner_chat_ids = _load_target_chat_ids()
     admin_chat_id_raw = (os.getenv("ADMIN_CHAT_ID") or "").strip()
-    admin_chat_id = int(admin_chat_id_raw) if admin_chat_id_raw else partner_chat_id
+    admin_chat_id = int(admin_chat_id_raw) if admin_chat_id_raw else partner_chat_ids[0]
     interval_days = max(1, int(os.getenv("INTERVAL_DAYS", "2")))
     sends_per_day = max(1, min(24, int(os.getenv("SENDS_PER_DAY", "1"))))
     send_time = os.getenv("SEND_TIME", "20:00")
 
     return Settings(
         telegram_bot_token=token,
-        partner_chat_id=partner_chat_id,
+        partner_chat_ids=partner_chat_ids,
         admin_chat_id=admin_chat_id,
         telegram_http_version=os.getenv("TELEGRAM_HTTP_VERSION", "1.1"),
         telegram_force_ipv4=os.getenv("TELEGRAM_FORCE_IPV4", "true").lower() == "true",
@@ -72,6 +73,7 @@ def load_settings() -> Settings:
         send_time=send_time,
         timezone_name=os.getenv("APP_TIMEZONE", "Africa/Cairo"),
         quote_provider=os.getenv("QUOTE_PROVIDER", "cohere").strip().lower(),
+        quote_theme=os.getenv("QUOTE_THEME", "stoicism, discipline, resilience, self-control, inner peace").strip(),
         quote_api_url=os.getenv("QUOTE_API_URL", "https://www.affirmations.dev/"),
         cohere_api_key=(os.getenv("COHERE_API_KEY") or "").strip(),
         cohere_model=os.getenv("COHERE_MODEL", "command-r-08-2024").strip(),
@@ -107,3 +109,20 @@ def _require(name: str) -> str:
     if not value:
         raise RuntimeError(f"Missing required environment variable: {name}")
     return value
+
+
+def _load_target_chat_ids() -> tuple[int, ...]:
+    raw_chat_ids = (os.getenv("TELEGRAM_CHAT_IDS") or "").strip()
+    if not raw_chat_ids:
+        return (int(_require("TELEGRAM_CHAT_ID")),)
+
+    chat_ids: list[int] = []
+    for raw_value in raw_chat_ids.split(","):
+        value = raw_value.strip()
+        if not value:
+            continue
+        chat_ids.append(int(value))
+
+    if not chat_ids:
+        raise RuntimeError("TELEGRAM_CHAT_IDS must contain at least one numeric chat ID.")
+    return tuple(chat_ids)

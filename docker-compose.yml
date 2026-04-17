@@ -1,7 +1,7 @@
 services:
   bot:
     build: .
-    container_name: telegram-quotes-bot
+    container_name: telegram-stoic-bot
     restart: unless-stopped
     env_file:
       - .env
