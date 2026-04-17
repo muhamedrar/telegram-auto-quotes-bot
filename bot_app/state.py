@@ -14,6 +14,8 @@ class RuntimeState:
     sends_per_day: int
     random_time_mode: bool
     send_time: str
+    images_enabled: bool
+    target_chat_ids: list[int]
     schedule_source: str
     scheduled_custom_message: str | None
     last_sent_on: str | None
@@ -30,6 +32,8 @@ class RuntimeState:
             sends_per_day=settings.sends_per_day,
             random_time_mode=settings.random_time_mode,
             send_time=settings.send_time,
+            images_enabled=settings.images_enabled,
+            target_chat_ids=list(settings.partner_chat_ids),
             schedule_source="api",
             scheduled_custom_message=None,
             last_sent_on=None,
@@ -75,6 +79,8 @@ class StateStore:
             sends_per_day=max(1, min(24, int(raw_state.get("sends_per_day", self.settings.sends_per_day)))),
             random_time_mode=bool(raw_state.get("random_time_mode", self.settings.random_time_mode)),
             send_time=raw_state.get("send_time", self.settings.send_time),
+            images_enabled=bool(raw_state.get("images_enabled", self.settings.images_enabled)),
+            target_chat_ids=_load_runtime_chat_ids(raw_state.get("target_chat_ids"), self.settings),
             schedule_source=schedule_source,
             scheduled_custom_message=raw_state.get("scheduled_custom_message"),
             last_sent_on=raw_state.get("last_sent_on"),
@@ -87,3 +93,21 @@ class StateStore:
     def save(self, state: RuntimeState) -> None:
         with STATE_FILE.open("w", encoding="utf-8") as file:
             json.dump(asdict(state), file, indent=2)
+
+
+def _load_runtime_chat_ids(raw_value: object, settings: Settings) -> list[int]:
+    if not isinstance(raw_value, list):
+        return list(settings.partner_chat_ids)
+
+    chat_ids: list[int] = []
+    for value in raw_value:
+        try:
+            chat_id = int(value)
+        except (TypeError, ValueError):
+            continue
+        if chat_id not in chat_ids:
+            chat_ids.append(chat_id)
+
+    if not chat_ids:
+        return list(settings.partner_chat_ids)
+    return chat_ids

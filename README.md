@@ -1,6 +1,6 @@
 # Telegram Personalized Messaging Bot
 
-A Telegram bot for sending stoic quotes with dark monochrome images, either manually or on a schedule.
+A Telegram bot for sending stoic quotes with optional dark monochrome images, either manually or on a schedule.
 
 ## Preview
 
@@ -18,11 +18,12 @@ A Telegram bot for sending stoic quotes with dark monochrome images, either manu
 
 - Generate a message with Cohere using `/send_quote`
 - Send your own custom message with `/send_custom`
-- Attach an image to every message
+- Attach an image when enabled, with source fallbacks
 - Schedule automatic sends
 - Choose how many times to send on each schedule day
 - Use fixed times or random daily times
 - Switch scheduled messages between API mode and custom mode
+- Turn pictures on or off from Telegram commands
 - Fall back to the legacy API or built-in messages if Cohere is unavailable
 - Run easily with Docker Compose
 
@@ -34,6 +35,7 @@ There are 2 important Telegram chats in this project:
 - `TELEGRAM_CHAT_ID`: the target chat ID. This is where the bot sends messages.
 
 If you want to send the same message to more than one target chat, use `TELEGRAM_CHAT_IDS` with a comma-separated list of chat IDs.
+You can also manage target chat IDs later from the admin chat with bot commands.
 
 In most cases:
 
@@ -106,6 +108,11 @@ Important variables:
 - `COHERE_API_URL`: Cohere chat endpoint
 - `QUOTE_API_URL`: optional legacy quote API fallback
 - `MESSAGE_TONE_TAGS`: comma-separated tone tags like `stoic,disciplined,calm,intense`
+- `IMAGES_ENABLED`: start with images on or off
+- `IMAGE_SOURCE_ORDER`: fallback order such as `pinterest,wikimedia,loremflickr`
+- `PINTEREST_RSS_URL`: optional direct Pinterest RSS feed URL
+- `PINTEREST_BOARD_URL`: optional public Pinterest board URL, which the bot will try as `<board>.rss`
+- `WIKIMEDIA_SEARCH_TERMS`: fallback search phrases for Wikimedia Commons
 - `IMAGE_API_URL_TEMPLATE`: image URL template
 - `IMAGE_TAGS`: image tag groups separated by `|`
 - `IMAGE_WIDTH` and `IMAGE_HEIGHT`: image size
@@ -115,6 +122,12 @@ You can control the vibe of the generated content from `.env`:
 - quote theme: change `QUOTE_THEME`
 - message vibe: change `MESSAGE_TONE_TAGS`
 - image vibe: change `IMAGE_TAGS`
+
+Image lookup now works in priority order:
+
+- Pinterest RSS if you configure a public board/feed
+- Wikimedia Commons search as the default reliable fallback
+- `loremflickr` as the final fallback
 
 ## Start With Docker
 
@@ -152,6 +165,9 @@ You can send messages immediately from the admin chat.
 
 - `/send_quote`: generate one stoic message and send it to all configured target chats
 - `/send_custom Your message here`: send your own custom text to all configured target chats
+- `/add_chat_id 123456789`: add another target chat ID from the admin chat
+- `/remove_chat_id 123456789`: remove a target chat ID
+- `/list_chat_ids`: show the current target chat IDs
 
 ## Automatic Sending
 
@@ -168,6 +184,8 @@ Main scheduling commands:
 - `/set_random_time off`: use fixed schedule times
 - `/set_source api`: scheduled messages come from the API
 - `/set_source custom`: scheduled messages use your saved custom text
+- `/set_images on`: include pictures when the bot can fetch one
+- `/set_images off`: send text only
 - `/set_custom_schedule Your scheduled message here`: save the custom scheduled text
 - `/status`: show current schedule settings
 
@@ -199,6 +217,9 @@ If the API also returns `author`, the bot includes it in the message caption/tex
 ## Main Commands Summary
 
 - `/chat_id`
+- `/add_chat_id 123456789`
+- `/remove_chat_id 123456789`
+- `/list_chat_ids`
 - `/send_quote`
 - `/send_custom Your custom message here`
 - `/schedule_on`
@@ -209,6 +230,8 @@ If the API also returns `author`, the bot includes it in the message caption/tex
 - `/set_random_time on`
 - `/set_source api`
 - `/set_source custom`
+- `/set_images on`
+- `/set_images off`
 - `/set_custom_schedule Your scheduled message here`
 - `/status`
 

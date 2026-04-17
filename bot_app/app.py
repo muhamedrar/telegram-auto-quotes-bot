@@ -3,18 +3,19 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+from io import BytesIO
 from dataclasses import dataclass
 from datetime import date, datetime
 
 import httpx
-from telegram import Update
+from telegram import InputFile, Update
 from telegram.constants import ChatAction
 from telegram.error import BadRequest, Forbidden, NetworkError, TimedOut
 from telegram.request import HTTPXRequest
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from bot_app.config import Settings, configure_logging, ensure_directories, load_settings
-from bot_app.images import ImageService
+from bot_app.images import DownloadedImage, ImageService
 from bot_app.quotes import QuoteService
 from bot_app.state import RuntimeState, StateStore
 
@@ -50,10 +51,18 @@ def run() -> None:
             cohere_api_url=settings.cohere_api_url,
         ),
         image_service=ImageService(
+            source_order=settings.image_source_order,
+            pinterest_rss_url=settings.pinterest_rss_url,
+            pinterest_board_url=settings.pinterest_board_url,
+            pinterest_feed_limit=settings.pinterest_feed_limit,
+            wikimedia_api_url=settings.wikimedia_api_url,
+            wikimedia_search_terms=settings.wikimedia_search_terms,
+            wikimedia_result_limit=settings.wikimedia_result_limit,
             url_template=settings.image_api_url_template,
             tags=settings.image_tags,
             width=settings.image_width,
             height=settings.image_height,
+            timeout_seconds=settings.image_request_timeout,
         ),
     )
 
@@ -73,6 +82,9 @@ def run() -> None:
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("chat_id", chat_id_command))
+    application.add_handler(CommandHandler("add_chat_id", add_chat_id_command))
+    application.add_handler(CommandHandler("remove_chat_id", remove_chat_id_command))
+    application.add_handler(CommandHandler("list_chat_ids", list_chat_ids_command))
     application.add_handler(CommandHandler("send_quote", send_quote_command))
     application.add_handler(CommandHandler("send_custom", send_custom_command))
     application.add_handler(CommandHandler("schedule_on", schedule_on_command))
@@ -82,6 +94,8 @@ def run() -> None:
     application.add_handler(CommandHandler("set_daily_count", set_daily_count_command))
     application.add_handler(CommandHandler("set_random_time", set_random_time_command))
     application.add_handler(CommandHandler("set_source", set_source_command))
+    application.add_handler(CommandHandler("set_images", set_images_command))
+    application.add_handler(CommandHandler("set_picture", set_images_command))
     application.add_handler(CommandHandler("set_custom_schedule", set_custom_schedule_command))
     application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
@@ -155,19 +169,25 @@ async def send_quote_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     log_incoming(update)
     if not admin_only(update, services.settings):
         return
+    state = services.state_store.load()
     try:
-        await _send_message_to_partner(
+        delivery = await _send_message_to_partner(
             context,
             services,
             delivery_mode="api",
             custom_message=None,
+            include_image=state.images_enabled,
         )
     except Exception as exc:
         LOGGER.exception("Manual quote send failed")
         await update.effective_message.reply_text(f"Could not send the quote: {_friendly_send_error(exc)}")
         return
     await update.effective_message.reply_text(
-        f"Stoic quote with image sent to {len(services.settings.partner_chat_ids)} chat(s)."
+        _manual_send_success_text(
+            "Stoic quote",
+            delivery,
+            target_count=len(state.target_chat_ids),
+        )
     )
 
 
@@ -180,12 +200,14 @@ async def send_custom_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not message_text:
         await update.effective_message.reply_text("Usage: /send_custom Your custom message here")
         return
+    state = services.state_store.load()
     try:
-        await _send_message_to_partner(
+        delivery = await _send_message_to_partner(
             context,
             services,
             delivery_mode="custom",
             custom_message=message_text,
+            include_image=state.images_enabled,
         )
     except Exception as exc:
         LOGGER.exception("Manual custom send failed")
@@ -194,7 +216,80 @@ async def send_custom_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return
     await update.effective_message.reply_text(
-        f"Custom message with image sent to {len(services.settings.partner_chat_ids)} chat(s)."
+        _manual_send_success_text(
+            "Custom message",
+            delivery,
+            target_count=len(state.target_chat_ids),
+        )
+    )
+
+
+async def add_chat_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    services = services_from(context)
+    log_incoming(update)
+    if not admin_only(update, services.settings):
+        return
+    if not context.args:
+        await update.effective_message.reply_text("Usage: /add_chat_id <numeric_chat_id>")
+        return
+
+    try:
+        chat_id = int(context.args[0].strip())
+    except ValueError:
+        await update.effective_message.reply_text("Chat ID must be a whole number like 123456789 or -1001234567890.")
+        return
+
+    state = services.state_store.load()
+    if chat_id in state.target_chat_ids:
+        await update.effective_message.reply_text(f"Chat ID {chat_id} is already in the target list.")
+        return
+
+    state.target_chat_ids.append(chat_id)
+    services.state_store.save(state)
+    await update.effective_message.reply_text(
+        f"Added chat ID {chat_id}.\nCurrent targets: {_format_chat_id_list(state.target_chat_ids)}"
+    )
+
+
+async def remove_chat_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    services = services_from(context)
+    log_incoming(update)
+    if not admin_only(update, services.settings):
+        return
+    if not context.args:
+        await update.effective_message.reply_text("Usage: /remove_chat_id <numeric_chat_id>")
+        return
+
+    try:
+        chat_id = int(context.args[0].strip())
+    except ValueError:
+        await update.effective_message.reply_text("Chat ID must be a whole number like 123456789 or -1001234567890.")
+        return
+
+    state = services.state_store.load()
+    if chat_id not in state.target_chat_ids:
+        await update.effective_message.reply_text(f"Chat ID {chat_id} is not in the current target list.")
+        return
+    if len(state.target_chat_ids) <= 1:
+        await update.effective_message.reply_text("At least one target chat ID must remain.")
+        return
+
+    state.target_chat_ids = [current_chat_id for current_chat_id in state.target_chat_ids if current_chat_id != chat_id]
+    services.state_store.save(state)
+    await update.effective_message.reply_text(
+        f"Removed chat ID {chat_id}.\nCurrent targets: {_format_chat_id_list(state.target_chat_ids)}"
+    )
+
+
+async def list_chat_ids_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    services = services_from(context)
+    log_incoming(update)
+    if not admin_only(update, services.settings):
+        return
+    state = services.state_store.load()
+    await update.effective_message.reply_text(
+        "Current target chat IDs:\n"
+        f"{_format_chat_id_list(state.target_chat_ids)}"
     )
 
 
@@ -319,6 +414,24 @@ async def set_source_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await update.effective_message.reply_text(f"Scheduled message source is now {new_source}.")
 
 
+async def set_images_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    services = services_from(context)
+    log_incoming(update)
+    if not admin_only(update, services.settings):
+        return
+    if not context.args or context.args[0].lower() not in {"on", "off"}:
+        await update.effective_message.reply_text("Usage: /set_images on OR /set_images off")
+        return
+    enabled = context.args[0].lower() == "on"
+    state = services.state_store.load()
+    state.images_enabled = enabled
+    services.state_store.save(state)
+    if enabled:
+        await update.effective_message.reply_text("Images are now ON. Future sends will include a picture when one is available.")
+        return
+    await update.effective_message.reply_text("Images are now OFF. Future sends will be text only.")
+
+
 async def set_custom_schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     services = services_from(context)
     log_incoming(update)
@@ -354,18 +467,20 @@ async def _send_message_to_partner(
     services: Services,
     delivery_mode: str,
     custom_message: str | None,
-) -> None:
+    include_image: bool,
+) -> "DeliveryResult":
+    state = services.state_store.load()
     caption_text = _build_delivery_texts(
         services,
         delivery_mode=delivery_mode,
         custom_message=custom_message,
     )
-    image_url = services.image_service.random_image_url()
-    await _send_message_to_targets(
+    image = services.image_service.random_image() if include_image else None
+    return await _send_message_to_targets(
         bot=context.bot,
-        target_chat_ids=services.settings.partner_chat_ids,
+        target_chat_ids=tuple(state.target_chat_ids),
         caption_text=caption_text,
-        image_url=image_url,
+        image=image,
     )
 
 
@@ -414,6 +529,9 @@ def _help_text() -> str:
     return (
         "Commands:\n"
         "/chat_id - show the current chat ID\n"
+        "/add_chat_id <id> - add a target chat ID\n"
+        "/remove_chat_id <id> - remove a target chat ID\n"
+        "/list_chat_ids - show all target chat IDs\n"
         "/send_quote - send a stoic quote now\n"
         "/send_custom <message> - send your own message now\n"
         "/schedule_on - enable automatic sends\n"
@@ -423,6 +541,7 @@ def _help_text() -> str:
         "/set_daily_count <count> - choose how many times to send on a schedule day\n"
         "/set_random_time <on|off> - use random daily send times\n"
         "/set_source <api|custom> - choose API messages or your custom text\n"
+        "/set_images <on|off> - choose whether messages include pictures\n"
         "/set_custom_schedule <message> - save a scheduled custom message\n"
         "/status - show current settings"
     )
@@ -441,9 +560,10 @@ def _format_status(state: RuntimeState, services: Services) -> str:
         f"Interval days: {state.interval_days}\n"
         f"Sends per day: {state.sends_per_day}\n"
         f"Random time mode: {'ON' if state.random_time_mode else 'OFF'}\n"
+        f"Images enabled: {'ON' if state.images_enabled else 'OFF'}\n"
         f"Today's planned times: {todays_times}\n"
         f"Admin chat ID: {services.settings.admin_chat_id}\n"
-        f"Target chat IDs: {', '.join(str(chat_id) for chat_id in services.settings.partner_chat_ids)}\n"
+        f"Target chat IDs: {_format_chat_id_list(state.target_chat_ids)}\n"
         f"Scheduled source: {state.schedule_source}\n"
         f"Custom scheduled message: {state.scheduled_custom_message or 'Not set'}\n"
         f"Last sent on: {state.last_sent_on or 'Never'}\n"
@@ -451,6 +571,8 @@ def _format_status(state: RuntimeState, services: Services) -> str:
         f"Quote theme: {services.settings.quote_theme}\n"
         f"Cohere model: {services.settings.cohere_model}\n"
         f"Legacy quote API: {services.settings.quote_api_url}\n"
+        f"Image sources: {', '.join(services.settings.image_source_order)}\n"
+        f"Pinterest board URL: {services.settings.pinterest_board_url or 'Not set'}\n"
         f"Image API template: {services.settings.image_api_url_template}\n"
         f"Image tags: {services.settings.image_tags}"
     )
@@ -462,8 +584,8 @@ def _friendly_send_error(exc: Exception) -> str:
         if "Chat not found" in message:
             return (
                 "Chat not found. Make sure TELEGRAM_CHAT_ID or TELEGRAM_CHAT_IDS contains real numeric "
-                "chat IDs, the target user has started the bot at least once, or the bot has been "
-                "added to the target group/channel."
+                "chat IDs, or add the target with /add_chat_id. The target user must still start the bot at least "
+                "once, or the bot must be added to the target group/channel."
             )
         return message
     if isinstance(exc, Forbidden):
@@ -531,8 +653,10 @@ async def schedule_tick_from_application(application: Application) -> None:
         await _send_message_to_partner_from_application(
             application,
             services,
+            state,
             delivery_mode=state.schedule_source,
             custom_message=state.scheduled_custom_message,
+            include_image=state.images_enabled,
         )
     except Exception as exc:
         LOGGER.exception("Scheduled delivery failed")
@@ -550,39 +674,57 @@ async def schedule_tick_from_application(application: Application) -> None:
 async def _send_message_to_partner_from_application(
     application: Application,
     services: Services,
+    state: RuntimeState,
     delivery_mode: str,
     custom_message: str | None,
-) -> None:
+    include_image: bool,
+) -> "DeliveryResult":
     caption_text = _build_delivery_texts(
         services,
         delivery_mode=delivery_mode,
         custom_message=custom_message,
     )
-    image_url = services.image_service.random_image_url()
-    await _send_message_to_targets(
+    image = services.image_service.random_image() if include_image else None
+    return await _send_message_to_targets(
         bot=application.bot,
-        target_chat_ids=services.settings.partner_chat_ids,
+        target_chat_ids=tuple(state.target_chat_ids),
         caption_text=caption_text,
-        image_url=image_url,
+        image=image,
     )
+
+
+@dataclass(frozen=True)
+class DeliveryResult:
+    delivered_count: int
+    image_sent: bool
 
 
 async def _send_message_to_targets(
     bot,
     target_chat_ids: tuple[int, ...],
     caption_text: str,
-    image_url: str,
-) -> None:
+    image: DownloadedImage | None,
+) -> DeliveryResult:
     send_errors: list[str] = []
     delivered_count = 0
+    image_sent = False
 
     for chat_id in target_chat_ids:
         try:
-            await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
-            try:
-                await bot.send_photo(chat_id=chat_id, photo=image_url, caption=caption_text)
-            except Exception as exc:
-                LOGGER.warning("Image send failed for chat %s, falling back to text only: %s", chat_id, exc)
+            if image is not None:
+                await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
+                try:
+                    await bot.send_photo(
+                        chat_id=chat_id,
+                        photo=InputFile(BytesIO(image.content), filename=image.filename),
+                        caption=caption_text,
+                    )
+                    image_sent = True
+                except Exception as exc:
+                    LOGGER.warning("Image send failed for chat %s, falling back to text only: %s", chat_id, exc)
+                    await bot.send_message(chat_id=chat_id, text=caption_text)
+            else:
+                await bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
                 await bot.send_message(chat_id=chat_id, text=caption_text)
             delivered_count += 1
         except Exception as exc:
@@ -591,6 +733,18 @@ async def _send_message_to_targets(
 
     if delivered_count == 0:
         raise RuntimeError("Could not deliver to any target chat. " + "; ".join(send_errors))
+    return DeliveryResult(delivered_count=delivered_count, image_sent=image_sent)
+
+
+def _manual_send_success_text(label: str, delivery: DeliveryResult, target_count: int) -> str:
+    suffix = "with image" if delivery.image_sent else "as text only"
+    return f"{label} sent to {min(target_count, delivery.delivered_count)} chat(s) {suffix}."
+
+
+def _format_chat_id_list(chat_ids: list[int]) -> str:
+    if not chat_ids:
+        return "None"
+    return ", ".join(str(chat_id) for chat_id in chat_ids)
 
 
 def build_telegram_request(settings: Settings) -> HTTPXRequest:

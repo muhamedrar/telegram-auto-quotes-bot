@@ -36,10 +36,19 @@ class Settings:
     cohere_model: str
     cohere_api_url: str
     message_tone_tags: str
+    images_enabled: bool
+    image_source_order: tuple[str, ...]
+    pinterest_rss_url: str
+    pinterest_board_url: str
+    pinterest_feed_limit: int
+    wikimedia_api_url: str
+    wikimedia_search_terms: str
+    wikimedia_result_limit: int
     image_api_url_template: str
     image_tags: str
     image_width: int
     image_height: int
+    image_request_timeout: float
     log_level: str
 
     @property
@@ -79,6 +88,23 @@ def load_settings() -> Settings:
         cohere_model=os.getenv("COHERE_MODEL", "command-r-08-2024").strip(),
         cohere_api_url=os.getenv("COHERE_API_URL", "https://api.cohere.com/v2/chat").strip(),
         message_tone_tags=os.getenv("MESSAGE_TONE_TAGS", "romantic,gentle,encouraging"),
+        images_enabled=os.getenv("IMAGES_ENABLED", "true").lower() == "true",
+        image_source_order=_load_image_source_order(),
+        pinterest_rss_url=os.getenv("PINTEREST_RSS_URL", "").strip(),
+        pinterest_board_url=os.getenv("PINTEREST_BOARD_URL", "").strip(),
+        pinterest_feed_limit=max(1, min(50, int(os.getenv("PINTEREST_FEED_LIMIT", "20")))),
+        wikimedia_api_url=os.getenv(
+            "WIKIMEDIA_API_URL",
+            "https://commons.wikimedia.org/w/api.php",
+        ).strip(),
+        wikimedia_search_terms=os.getenv(
+            "WIKIMEDIA_SEARCH_TERMS",
+            (
+                "stoic philosopher statue|marcus aurelius bust|ancient greek sculpture|"
+                "roman marble bust|classical statue monochrome"
+            ),
+        ).strip(),
+        wikimedia_result_limit=max(1, min(20, int(os.getenv("WIKIMEDIA_RESULT_LIMIT", "8")))),
         image_api_url_template=os.getenv(
             "IMAGE_API_URL_TEMPLATE",
             "https://loremflickr.com/{width}/{height}/{tags}?lock={seed}",
@@ -89,6 +115,7 @@ def load_settings() -> Settings:
         ),
         image_width=max(400, int(os.getenv("IMAGE_WIDTH", "1200"))),
         image_height=max(400, int(os.getenv("IMAGE_HEIGHT", "1600"))),
+        image_request_timeout=float(os.getenv("IMAGE_REQUEST_TIMEOUT", "20")),
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
     )
 
@@ -126,3 +153,19 @@ def _load_target_chat_ids() -> tuple[int, ...]:
     if not chat_ids:
         raise RuntimeError("TELEGRAM_CHAT_IDS must contain at least one numeric chat ID.")
     return tuple(chat_ids)
+
+
+def _load_image_source_order() -> tuple[str, ...]:
+    supported_sources = {"pinterest", "wikimedia", "loremflickr"}
+    raw_value = os.getenv("IMAGE_SOURCE_ORDER", "pinterest,wikimedia,loremflickr")
+    parsed_sources: list[str] = []
+
+    for raw_source in raw_value.split(","):
+        source = raw_source.strip().lower()
+        if not source or source not in supported_sources or source in parsed_sources:
+            continue
+        parsed_sources.append(source)
+
+    if not parsed_sources:
+        return ("wikimedia", "loremflickr")
+    return tuple(parsed_sources)
